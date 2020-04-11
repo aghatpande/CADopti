@@ -11,7 +11,7 @@ Similarly to CAD, CAD*opti* detects functional cell assemblies of arbitrary size
 CAD/CAD*opti* comparison: CAD*opti* returns a sub-selection of the assemblies detected by CAD, automatically selecting for the time scale at which assembly units are best coordinated. For this reason, CAD*opti* is faster than CAD. Note that if interested in the specific question of whether the same set of units is coordinated at two time scales, CAD*opti* has to be run separately on the two time scales of interest. 
 
 
-Code designed in MATLAB R2018a. In case of questions or comments, please contact eleonora.russo@zi-mannheim.de. 
+Code tested for MATLAB R2018a. In case of questions or comments, please contact eleonora.russo@zi-mannheim.de. 
 Please credit the source and cite *Russo and Durstewitz 2017* and *Oettl et al. 2020* when using the code in any form of publication.
 
 
