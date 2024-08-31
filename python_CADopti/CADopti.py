@@ -63,6 +63,22 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     binM = [None] * len(BinSizes)
     number_tests = 0
 
+    # checking spM makes sense before proceeding to detect assemblies
+    if spM.size == 0:
+        raise ValueError("spM is empty")
+    
+    if not np.isfinite(spM).all():
+        raise ValueError("spM contains non-finite values")
+    
+    min_val = np.min(spM)
+    max_val = np.max(spM)
+    
+    if min_val >= max_val:
+        raise ValueError(f"min value ({min_val}) is greater than or equal to max value ({max_val})")
+    
+    if int_val == 0:
+        raise ValueError("int_val is zero")
+    
     # matrix binning at all bins
     for gg in range(len(BinSizes)):
         int_val = BinSizes[gg]
