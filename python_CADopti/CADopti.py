@@ -1,8 +1,11 @@
+# this code was modified by chatgpt to correct a syntax error in the last return statement in CADopti_claude.py
 import numpy as np
 from scipy import stats
 import multiprocessing as mp
+from itertools import combinations
 
 def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=None, bytelimit=None):
+
     """
     This function returns cell assemblies detected in spM spike matrix binned 
     at a temporal resolution specified in 'BinSizes' vector and testing for all 
@@ -43,7 +46,7 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     © 2020 Russo
     for information please contact eleonora.russo@zi-mannheim.de
     """
-
+    
     if ref_lag is None:
         ref_lag = 2
     if alph is None:
@@ -85,184 +88,182 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     assembly_selected_xy = []
     p_values = []
 
-    import multiprocessing as mp
-from itertools import combinations
+    def process_pair(args):
+        w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag = args
+        assemblybin = [None] * len(BinSizes)
+        p_by_bin = []
+        for gg in range(len(BinSizes)):
+            assemblybin[gg] = FindAssemblies_recursive_prepruned(
+                np.vstack((binM[gg][w1, :], binM[gg][w2, :])),
+                w1, w2, MaxLags[gg], Dc, ref_lag
+            )
+            p_by_bin.append(assemblybin[gg]['pr'][-1])
+            assemblybin[gg]['bin'] = BinSizes[gg]
+        
+        b = np.argmin(p_by_bin)
+        return assemblybin[b], p_by_bin[b]
 
-def process_pair(args):
-    w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag = args
-    assemblybin = [None] * len(BinSizes)
-    p_by_bin = []
-    for gg in range(len(BinSizes)):
-        assemblybin[gg] = FindAssemblies_recursive_prepruned(
-            np.vstack((binM[gg][w1, :], binM[gg][w2, :])),
-            w1, w2, MaxLags[gg], Dc, ref_lag
-        )
-        p_by_bin.append(assemblybin[gg]['pr'][-1])
-        assemblybin[gg]['bin'] = BinSizes[gg]
+    # First order assembly
+    print('order 1')
+    assembly_selected_xy = []
+    p_values = []
     
-    b = np.argmin(p_by_bin)
-    return assemblybin[b], p_by_bin[b]
-
-# First order assembly
-print('order 1')
-assembly_selected_xy = []
-p_values = []
-
-# Prepare arguments for parallel processing
-pair_args = [
-    (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
-    for w1, w2 in combinations(range(nneu), 2)
-]
-
-# Use multiprocessing to parallelize the computation
-with mp.Pool() as pool:
-    results = pool.map(process_pair, pair_args)
-
-# Process the results
-for result, p_value in results:
-    assembly_selected_xy.append(result)
-    p_values.append(p_value)
-
-assembly_selected = assembly_selected_xy
-
-# Holm-Bonferroni correction
-x = np.arange(1, len(p_values) + 1)
-p_values = np.sort(p_values)
-p_values_alpha = alph / (number_tests + 1 - x)
-
-ANfo = np.zeros((nneu, nneu))
-
-for oo in range(len(assembly_selected) - 1, -1, -1):
-    if assembly_selected[oo]['pr'][-1] > HBcorrected_p:
-        assembly_selected.pop(oo)
-    else:
-        ANfo[assembly_selected[oo]['elements'][0], assembly_selected[oo]['elements'][1]] = 1
-
-Assemblies_all_orders = [assembly_selected]
-
-# Higher orders
-Oincrement = 1
-while Oincrement and O < (O_th - 1):
-    O += 1
-    print(f'order {O}')
-    Oincrement = 0
-    assembly_selected_aus = []
-    xx = 0  # Python uses 0-based indexing
-
-    for w1 in range(len(assembly_selected)):
-        # bin at which to test w1
-        ggg = BinSizes.index(assembly_selected[w1]['bin'])
-
-        # element to test with w1
-        w1_elements = assembly_selected[w1]['elements']
-        w2_to_test = np.where(ANfo[w1_elements, :] == 1)[1]  # Using numpy for efficiency
-        w2_to_test = w2_to_test[~np.isin(w2_to_test, w1_elements)]  # Remove elements already in the assembly
-        w2_to_test = np.unique(w2_to_test)
-
-        for w2 in w2_to_test:
-            spikeTrain2 = binM[ggg][w2, :]
-            assemblybin_aus = TestPair_ref(assembly_selected[w1], spikeTrain2, w2, MaxLags[ggg], Dc, ref_lag)
-            p_values.append(assemblybin_aus['pr'][-1])
-            number_tests += 2 * MaxLags[ggg] + 1
-            if assemblybin_aus['pr'][-1] < HBcorrected_p:
-                assembly_selected_aus.append(assemblybin_aus)
-                assembly_selected_aus[-1]['bin'] = BinSizes[ggg]
-                xx += 1
-                Oincrement = 1
-
-    if Oincrement:
-        # Pruning within the same size
-        na = len(assembly_selected_aus)
-        nelement = len(assembly_selected_aus[0]['elements'])
-        selection = np.full((na, nelement + 2), np.nan)
-        assembly_final = [None] * na
-        nns = 0
-
-        for i in range(na):
-            elem = sorted(assembly_selected_aus[i]['elements'])
-            ism = np.all(selection[:, :nelement] == elem, axis=1)
-            if not np.any(ism):
-                assembly_final[nns] = assembly_selected_aus[i]
-                selection[nns, :nelement] = elem
-                selection[nns, nelement] = assembly_selected_aus[i]['pr'][-1]
-                selection[nns, nelement + 1] = i
-                nns += 1
-            else:
-                indx = np.where(ism)[0][0]
-                if selection[indx, nelement] > assembly_selected_aus[i]['pr'][-1]:
-                    assembly_final[indx] = assembly_selected_aus[i]
-                    selection[indx, nelement] = assembly_selected_aus[i]['pr'][-1]
-                    selection[indx, nelement + 1] = i
-
-        assembly_final = [a for a in assembly_final if a is not None]
-        assembly_selected = assembly_final
-        Assemblies_all_orders.append(assembly_final)
-
-    # Holm-Bonferroni
+    # Prepare arguments for parallel processing
+    pair_args = [
+        (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
+        for w1, w2 in combinations(range(nneu), 2)
+    ]
+    
+    # Use multiprocessing to parallelize the computation
+    with mp.Pool() as pool:
+        results = pool.map(process_pair, pair_args)
+    
+    # Process the results
+    for result, p_value in results:
+        assembly_selected_xy.append(result)
+        p_values.append(p_value)
+    
+    assembly_selected = assembly_selected_xy
+    
+    # Holm-Bonferroni correction
     x = np.arange(1, len(p_values) + 1)
     p_values = np.sort(p_values)
     p_values_alpha = alph / (number_tests + 1 - x)
+    
+    ANfo = np.zeros((nneu, nneu))
+    
+    # Initialize HBcorrected_p before using it
     aus = np.where((p_values - p_values_alpha) < 0)[0]
     HBcorrected_p = 0 if len(aus) == 0 else p_values[aus[-1]]
-
-    # Holm-Bonferroni (final)
-    x = np.arange(1, len(p_values) + 1)
-    p_values = np.sort(p_values)
-    p_values_alpha = alph / (number_tests + 1 - x)
-    aus = np.where((p_values - p_values_alpha) < 0)[0]
-    HBcorrected_p = 0 if len(aus) == 0 else p_values[aus[-1]]
-
-    for o in range(len(Assemblies_all_orders)):
-        Assemblies_all_orders[o] = [a for a in Assemblies_all_orders[o] if a['pr'][-1] <= HBcorrected_p]
-
-    # Pruning between different assembly sizes
-    Element_template = []
-    for assembly in Assemblies_all_orders[-1]:
-        Element_template.append(assembly['elements'])
-
-    for o in range(len(Assemblies_all_orders) - 2, -1, -1):
-        new_assemblies = []
-        for assembly in Assemblies_all_orders[o]:
-            if not any(set(assembly['elements']).issubset(set(template)) for template in Element_template):
-                new_assemblies.append(assembly)
-                Element_template.append(assembly['elements'])
-        Assemblies_all_orders[o] = new_assemblies
-
-    # Reformat dividing by bins
-    assembly = {'bin': [{} for _ in range(len(BinSizes))]}
-    for o, order_assemblies in enumerate(Assemblies_all_orders):
-        for oo, a in enumerate(order_assemblies):
-            bx = BinSizes.index(a['bin'])
-            if 'n' not in assembly['bin'][bx]:
-                assembly['bin'][bx]['n'] = []
-            assembly['bin'][bx]['n'].append(a)
-
-    # Remove empty bins
-    assembly['bin'] = [b for b in assembly['bin'] if b]
-
-    # Add parameters to assembly
-    assembly['parameters'] = {
-        'alph': alph,
-        'Dc': Dc,
-        'No_th': No_th,
-        'O_th': O_th,
-        'bytelimit': bytelimit,
-        'ref_lag': ref_lag
-    }
-
-    As_across_bins, As_across_bins_index = assemblies_across_bins(assembly, BinSizes)
-
-    return As_across_bins, As_across_bins_index, assembly, Assemblies_all_orders
+    
+    for oo in range(len(assembly_selected) - 1, -1, -1):
+        if assembly_selected[oo]['pr'][-1] > HBcorrected_p:
+            assembly_selected.pop(oo)
+        else:
+            ANfo[assembly_selected[oo]['elements'][0], assembly_selected[oo]['elements'][1]] = 1
+    
+    Assemblies_all_orders = [assembly_selected]
+    
+    # Higher orders
+    Oincrement = 1
+    while Oincrement and O < (O_th - 1):
+        O += 1
+        print(f'order {O}')
+        Oincrement = 0
+        assembly_selected_aus = []
+        xx = 0  # Python uses 0-based indexing
+    
+        for w1 in range(len(assembly_selected)):
+            # bin at which to test w1
+            ggg = BinSizes.index(assembly_selected[w1]['bin'])
+    
+            # element to test with w1
+            w1_elements = assembly_selected[w1]['elements']
+            w2_to_test = np.where(ANfo[w1_elements, :] == 1)[1]  # Using numpy for efficiency
+            w2_to_test = w2_to_test[~np.isin(w2_to_test, w1_elements)]  # Remove elements already in the assembly
+            w2_to_test = np.unique(w2_to_test)
+    
+            for w2 in w2_to_test:
+                spikeTrain2 = binM[ggg][w2, :]
+                assemblybin_aus = TestPair_ref(assembly_selected[w1], spikeTrain2, w2, MaxLags[ggg], Dc, ref_lag)
+                p_values.append(assemblybin_aus['pr'][-1])
+                number_tests += 2 * MaxLags[ggg] + 1
+                if assemblybin_aus['pr'][-1] < HBcorrected_p:
+                    assembly_selected_aus.append(assemblybin_aus)
+                    assembly_selected_aus[-1]['bin'] = BinSizes[ggg]
+                    xx += 1
+                    Oincrement = 1
+    
+        if Oincrement:
+            # Pruning within the same size
+            na = len(assembly_selected_aus)
+            nelement = len(assembly_selected_aus[0]['elements'])
+            selection = np.full((na, nelement + 2), np.nan)
+            assembly_final = [None] * na
+            nns = 0
+    
+            for i in range(na):
+                elem = sorted(assembly_selected_aus[i]['elements'])
+                ism = np.all(selection[:, :nelement] == elem, axis=1)
+                if not np.any(ism):
+                    assembly_final[nns] = assembly_selected_aus[i]
+                    selection[nns, :nelement] = elem
+                    selection[nns, nelement] = assembly_selected_aus[i]['pr'][-1]
+                    selection[nns, nelement + 1] = i
+                    nns += 1
+                else:
+                    indx = np.where(ism)[0][0]
+                    if selection[indx, nelement] > assembly_selected_aus[i]['pr'][-1]:
+                        assembly_final[indx] = assembly_selected_aus[i]
+                        selection[indx, nelement] = assembly_selected_aus[i]['pr'][-1]
+                        selection[indx, nelement + 1] = i
+    
+            assembly_final = [a for a in assembly_final if a is not None]
+            assembly_selected = assembly_final
+            Assemblies_all_orders.append(assembly_final)
+    
+        # Holm-Bonferroni correction
+        x = np.arange(1, len(p_values) + 1)
+        p_values = np.sort(p_values)
+        p_values_alpha = alph / (number_tests + 1 - x)
+        aus = np.where((p_values - p_values_alpha) < 0)[0]
+        HBcorrected_p = 0 if len(aus) == 0 else p_values[aus[-1]]
+    
+        # Final Holm-Bonferroni correction
+        x = np.arange(1, len(p_values) + 1)
+        p_values = np.sort(p_values)
+        p_values_alpha = alph / (number_tests + 1 - x)
+        aus = np.where((p_values - p_values_alpha) < 0)[0]
+        HBcorrected_p = 0 if len(aus) == 0 else p_values[aus[-1]]
+    
+        for o in range(len(Assemblies_all_orders)):
+            Assemblies_all_orders[o] = [a for a in Assemblies_all_orders[o] if a['pr'][-1] <= HBcorrected_p]
+    
+        # Pruning between different assembly sizes
+        Element_template = []
+        for assembly in Assemblies_all_orders[-1]:
+            Element_template.append(assembly['elements'])
+    
+        for o in range(len(Assemblies_all_orders) - 2, -1, -1):
+            new_assemblies = []
+            for assembly in Assemblies_all_orders[o]:
+                if not any(set(assembly['elements']).issubset(set(template)) for template in Element_template):
+                    new_assemblies.append(assembly)
+                    Element_template.append(assembly['elements'])
+            Assemblies_all_orders[o] = new_assemblies
+    
+        # Reformat dividing by bins
+        assembly = {'bin': [{} for _ in range(len(BinSizes))]}
+        for o, order_assemblies in enumerate(Assemblies_all_orders):
+            for oo, a in enumerate(order_assemblies):
+                bx = BinSizes.index(a['bin'])
+                if 'n' not in assembly['bin'][bx]:
+                    assembly['bin'][bx]['n'] = []
+                assembly['bin'][bx]['n'].append(a)
+    
+        # Remove empty bins
+        assembly['bin'] = [b for b in assembly['bin'] if b]
+    
+        # Add parameters to assembly
+        assembly['parameters'] = {
+            'alph': alph,
+            'Dc': Dc,
+            'No_th': No_th,
+            'O_th': O_th,
+            'bytelimit': bytelimit,
+            'ref_lag': ref_lag
+        }
+    
+        As_across_bins, As_across_bins_index = assemblies_across_bins(assembly, BinSizes)
+    
+        # **Add the return statement inside the function**
+        return As_across_bins, As_across_bins_index, assembly, Assemblies_all_orders
 
 def FindAssemblies_recursive_prepruned(binM, w1, w2, MaxLag, Dc, ref_lag):
-    # Implementation needed
-    pass
     pass
 
 def TestPair_ref(assembly, spikeTrain2, w2, MaxLag, Dc, ref_lag):
-    # Implementation needed
     pass
 
 def assemblies_across_bins(assembly, BinSizes):
-    # Implementation needed
     pass
