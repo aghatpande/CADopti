@@ -1,3 +1,5 @@
+from restyle_assembly_lags_time import restyle_assembly_lags_time  # Import the function
+
 def assemblies_across_bins(assembly, bin_sizes):
     """
     Rearrange assemblies of all bins in a different structure (no assembly modification, only formal).

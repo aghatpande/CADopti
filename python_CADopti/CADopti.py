@@ -4,17 +4,17 @@ from scipy import stats
 import multiprocessing as mp
 from itertools import combinations
 
-def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=None, bytelimit=None):
+def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=None, bytelimit=None):
 
     """
-    This function returns cell assemblies detected in spM spike matrix binned 
+    This function returns cell assemblies detected in spike_times spike matrix binned 
     at a temporal resolution specified in 'BinSizes' vector and testing for all 
     lags between '-MaxLags(i)' and 'MaxLags(i)'
 
-    USAGE: [assembly] = Main_assemblies_detection(spM, MaxLags, BinSizes, ref_lag, alph, Dc, No_th, O_th, bytelimit)
+    USAGE: [assembly] = Main_assemblies_detection(spike_times, MaxLags, BinSizes, ref_lag, alph, Dc, No_th, O_th, bytelimit)
 
     ARGUMENTS:
-    spM     := matrix with population spike trains; each row is the spike train (time stamps, not binned) relative to a unit. 
+    spike_times     := matrix with population spike trains; each row is the spike train (time stamps, not binned) relative to a unit. 
     BinSizes:= vector of bin sizes to be tested;
     MaxLags := vector of maximal lags to be tested. For a binning dimension of BinSizes(i) the program will test all pairs configurations with a time shift between -MaxLags(i) and MaxLags(i);
     (optional) ref_lag      := reference lag. Default value 2
@@ -46,7 +46,7 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     © 2020 Russo
     for information please contact eleonora.russo@zi-mannheim.de
     """
-    
+
     if ref_lag is None:
         ref_lag = 2
     if alph is None:
@@ -58,20 +58,27 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     if bytelimit is None:
         bytelimit = float('inf')  # no limitation on assembly dimension
 
-    nneu = spM.shape[0]  # number of units
+    nneu = len(spike_times)  # number of units
     testit = np.ones(len(BinSizes))
     binM = [None] * len(BinSizes)
     number_tests = 0
 
-    # checking spM makes sense before proceeding to detect assemblies
-    if spM.size == 0:
-        raise ValueError("spM is empty")
+# Remove NaNs and get valid spike times for each neuron
+    spike_times = [neuron[~np.isnan(neuron)] for neuron in spike_times]
     
-    if not np.isfinite(spM).all():
-        raise ValueError("spM contains non-finite values")
+    # Calculate the minimum interval between spikes
+    int_val = np.min([np.min(np.diff(times)) for times in spike_times if len(times) > 1])
     
-    min_val = np.min(spM)
-    max_val = np.max(spM)
+    # Calculate overall min and max times
+    min_val = np.min([np.min(times) for times in spike_times if len(times) > 0])
+    max_val = np.max([np.max(times) for times in spike_times if len(times) > 0])
+
+    # checking spike_times makes sense before proceeding to detect assemblies
+    if not spike_times:
+        raise ValueError("All spike trains are empty")
+    
+    if not np.isfinite(int_val):
+        raise ValueError("Couldn't compute a valid inter-spike interval")
     
     if min_val >= max_val:
         raise ValueError(f"min value ({min_val}) is greater than or equal to max value ({max_val})")
@@ -81,14 +88,14 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     
     # matrix binning at all bins
     for gg in range(len(BinSizes)):
-        int_val = BinSizes[gg]
-        tb = np.arange(np.min(spM), np.max(spM) + int_val, int_val)
-        
-        binM[gg] = np.zeros((nneu, len(tb) - 1), dtype=np.uint8)
-        number_tests += nneu * (nneu - 1) * (2 * MaxLags[gg] + 1) // 2
-        
-        for n in range(nneu):
-            binM[gg][n, :], _ = np.histogram(spM[n, :], tb)
+        bin_size = BinSizes[gg]
+        tb = np.arange(min_val, max_val + bin_size, bin_size)
+    
+    binM[gg] = np.zeros((nneu, len(tb) - 1), dtype=np.uint8)
+    number_tests += nneu * (nneu - 1) * (2 * MaxLags[gg] + 1) // 2
+    
+    for n in range(nneu):
+        binM[gg][n, :], _ = np.histogram(spike_times[n], tb)
         
         assembly = {'bin': [{'n': [], 'bin_edges': tb} for _ in range(len(BinSizes))]}
         
@@ -126,9 +133,9 @@ def CADopti(spM, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=No
     
     # Prepare arguments for parallel processing
     pair_args = [
-        (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
-        for w1, w2 in combinations(range(nneu), 2)
-    ]
+    (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
+    for w1, w2 in combinations(range(nneu), 2)
+]
     
     # Use multiprocessing to parallelize the computation
     with mp.Pool() as pool:
