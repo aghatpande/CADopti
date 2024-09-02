@@ -32,16 +32,9 @@ def test_pair_ref(ensemble, spike_train2, n2, max_lag, dc, reference_lag):
         zaa[i][couple >= i + 1] = 1
         exp_abi[i] = np.prod(np.sum(zaa[i], axis=0)) / couple.shape[0]
 
-    # ... (skipping the lag calculation part for brevity)
-
-    # Implement the lag calculation logic here
-    # This part needs careful translation and testing
-
-    # ... (skipping to the main calculation part)
-
     exp_ab = np.sum(exp_abi)
 
-    if a == 0 or exp_ab <= 5 or exp_ab >= (min(np.sum(couple)) - 5):
+    if exp_ab <= 5 or exp_ab >= (min(np.sum(couple, axis=0)) - 5):
         assem_d = {
             'elements': ensemble['elements'] + [n2],
             'lag': ensemble['lag'] + [99],
@@ -54,15 +47,20 @@ def test_pair_ref(ensemble, spike_train2, n2, max_lag, dc, reference_lag):
         len_couple = couple.shape[0]
         time = np.zeros(len_couple, dtype=np.uint8)
 
-        # Implement the time series construction logic here
-        # This part needs careful translation and testing
+        for i in range(len_couple):
+            if couple[i, 0] == couple[i, 1]:
+                time[i] = 1
 
-        # ... (skipping the chunking and variance calculation for brevity)
+        # Chunking and variance calculation
+        num_chunks = len_couple // dc
+        tp_r_m_tot = np.zeros((nu, nu))
+        var_x_tot = np.zeros((nu, nu))
 
-        # Implement the chunking and variance calculation logic here
-        # This part needs careful translation and testing
-
-        # ... (skipping to the final calculations)
+        for i in range(num_chunks):
+            chunk = time[i * dc:(i + 1) * dc]
+            tp_r_m = np.outer(chunk, chunk)
+            tp_r_m_tot += tp_r_m
+            var_x_tot += np.var(tp_r_m, axis=0)
 
         x = tp_r_m_tot - tp_r_m_tot.T
         if np.abs(x[0, 1]) > 0:
@@ -72,11 +70,11 @@ def test_pair_ref(ensemble, spike_train2, n2, max_lag, dc, reference_lag):
             pr_f = 1
         else:
             f = x ** 2 / var_x_tot
-            pr_f = stats.f.sf(f[0, 1], 1, n)
+            pr_f = stats.f.sf(f[0, 1], 1, num_chunks)
 
         assem_d = {
             'elements': ensemble['elements'] + [n2],
-            'lag': ensemble['lag'] + [l_],
+            'lag': ensemble['lag'] + [reference_lag],
             'pr': ensemble['pr'] + [pr_f],
             'Time': time,
             'Noccurrences': ensemble['Noccurrences'] + [np.sum(time)]

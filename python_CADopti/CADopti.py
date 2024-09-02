@@ -1,11 +1,33 @@
-# this code was modified by chatgpt to correct a syntax error in the last return statement in CADopti_claude.py
 import numpy as np
 from scipy import stats
 import multiprocessing as mp
 from itertools import combinations
 
-def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=None, bytelimit=None):
+# Import helper functions
+from FindAssemblies_recursive_prepruned import find_assemblies_recursive_prepruned
+from TestPair_ref import test_pair_ref
+from assemblies_across_bins import assemblies_across_bins
 
+def process_pair(args):
+	w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag = args
+	assemblybin = [None] * len(BinSizes)
+	p_by_bin = []
+	for gg in range(len(BinSizes)):
+		assemblybin[gg] = find_assemblies_recursive_prepruned(
+			np.vstack((binM[gg][w1, :], binM[gg][w2, :])),
+			w1, w2, MaxLags[gg], Dc, ref_lag
+		)
+		if assemblybin[gg] is not None:
+			p_by_bin.append(assemblybin[gg]['pr'][-1])
+			assemblybin[gg]['bin'] = BinSizes[gg]
+		else:
+			print(f"find_assemblies_recursive_prepruned returned None for w1={w1}, w2={w2}, binSize={BinSizes[gg]}")
+			p_by_bin.append(float('inf'))  # Assign a high p-value if the result is None
+	
+	b = np.argmin(p_by_bin)
+	return assemblybin[b], p_by_bin[b]
+
+def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None, O_th=None, bytelimit=None):
     """
     This function returns cell assemblies detected in spike_times spike matrix binned 
     at a temporal resolution specified in 'BinSizes' vector and testing for all 
@@ -63,7 +85,7 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     binM = [None] * len(BinSizes)
     number_tests = 0
 
-# Remove NaNs and get valid spike times for each neuron
+    # Remove NaNs and get valid spike times for each neuron
     spike_times = [neuron[~np.isnan(neuron)] for neuron in spike_times]
     
     # Calculate the minimum interval between spikes
@@ -76,7 +98,6 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     # checking spike_times makes sense before proceeding to detect assemblies
     if not spike_times:
         raise ValueError("All spike trains are empty")
-    
     if not np.isfinite(int_val):
         raise ValueError("Couldn't compute a valid inter-spike interval")
     
@@ -91,11 +112,11 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
         bin_size = BinSizes[gg]
         tb = np.arange(min_val, max_val + bin_size, bin_size)
     
-    binM[gg] = np.zeros((nneu, len(tb) - 1), dtype=np.uint8)
-    number_tests += nneu * (nneu - 1) * (2 * MaxLags[gg] + 1) // 2
+        binM[gg] = np.zeros((nneu, len(tb) - 1), dtype=np.uint8)
+        number_tests += nneu * (nneu - 1) * (2 * MaxLags[gg] + 1) // 2
     
-    for n in range(nneu):
-        binM[gg][n, :], _ = np.histogram(spike_times[n], tb)
+        for n in range(nneu):
+            binM[gg][n, :], _ = np.histogram(spike_times[n], tb)
         
         assembly = {'bin': [{'n': [], 'bin_edges': tb} for _ in range(len(BinSizes))]}
         
@@ -111,21 +132,6 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     assembly_selected_xy = []
     p_values = []
 
-    def process_pair(args):
-        w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag = args
-        assemblybin = [None] * len(BinSizes)
-        p_by_bin = []
-        for gg in range(len(BinSizes)):
-            assemblybin[gg] = FindAssemblies_recursive_prepruned(
-                np.vstack((binM[gg][w1, :], binM[gg][w2, :])),
-                w1, w2, MaxLags[gg], Dc, ref_lag
-            )
-            p_by_bin.append(assemblybin[gg]['pr'][-1])
-            assemblybin[gg]['bin'] = BinSizes[gg]
-        
-        b = np.argmin(p_by_bin)
-        return assemblybin[b], p_by_bin[b]
-
     # First order assembly
     print('order 1')
     assembly_selected_xy = []
@@ -133,9 +139,9 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     
     # Prepare arguments for parallel processing
     pair_args = [
-    (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
-    for w1, w2 in combinations(range(nneu), 2)
-]
+        (w1, w2, binM, MaxLags, BinSizes, Dc, ref_lag)
+        for w1, w2 in combinations(range(nneu), 2)
+    ]
     
     # Use multiprocessing to parallelize the computation
     with mp.Pool() as pool:
@@ -143,8 +149,12 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     
     # Process the results
     for result, p_value in results:
-        assembly_selected_xy.append(result)
-        p_values.append(p_value)
+        if result is not None:
+            assembly_selected_xy.append(result)
+            p_values.append(p_value)
+    
+    if not assembly_selected_xy:
+        raise ValueError("No valid assemblies found. Check the input data and parameters.")
     
     assembly_selected = assembly_selected_xy
     
@@ -188,7 +198,7 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     
             for w2 in w2_to_test:
                 spikeTrain2 = binM[ggg][w2, :]
-                assemblybin_aus = TestPair_ref(assembly_selected[w1], spikeTrain2, w2, MaxLags[ggg], Dc, ref_lag)
+                assemblybin_aus = test_pair_ref(assembly_selected[w1], spikeTrain2, w2, MaxLags[ggg], Dc, ref_lag)
                 p_values.append(assemblybin_aus['pr'][-1])
                 number_tests += 2 * MaxLags[ggg] + 1
                 if assemblybin_aus['pr'][-1] < HBcorrected_p:
@@ -196,7 +206,6 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
                     assembly_selected_aus[-1]['bin'] = BinSizes[ggg]
                     xx += 1
                     Oincrement = 1
-    
         if Oincrement:
             # Pruning within the same size
             na = len(assembly_selected_aus)
@@ -281,12 +290,3 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     
         # **Add the return statement inside the function**
         return As_across_bins, As_across_bins_index, assembly, Assemblies_all_orders
-
-def FindAssemblies_recursive_prepruned(binM, w1, w2, MaxLag, Dc, ref_lag):
-    pass
-
-def TestPair_ref(assembly, spikeTrain2, w2, MaxLag, Dc, ref_lag):
-    pass
-
-def assemblies_across_bins(assembly, BinSizes):
-    pass
