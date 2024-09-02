@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io as sio
-from python_CADopti.CADopti import CADopti
+from CADopti import CADopti
 from assembly_assignment_matrix import assembly_assignment_matrix
 from assembly_activity_function import assembly_activity_function
 
@@ -10,13 +10,13 @@ if __name__ == '__main__':
     mat_data = sio.loadmat('Data.mat')
 
     # Print the keys in the mat file for troubleshooting if needed
-    print("Keys in Data.mat:", mat_data.keys())
+    # print("Keys in Data.mat:", mat_data.keys()) # uncomment for troubleshooting
 
-    # Print information about spM
-    print("spM shape:", mat_data['spM'].shape)
-    print("spM data type:", mat_data['spM'].dtype)
-    print("Sample of spM (first 5 rows, first 10 columns):")
-    print(mat_data['spM'][:5, :10])
+    # Print information about spM if needed for troubleshooting loading the data
+    # print("spM shape:", mat_data['spM'].shape)
+    # print("spM data type:", mat_data['spM'].dtype)
+    # print("Sample of spM (first 5 rows, first 10 columns):")
+    # print(mat_data['spM'][:5, :10])
 
     # Assign spM correctly
     spM = mat_data['spM']
@@ -24,31 +24,14 @@ if __name__ == '__main__':
     # Convert spM to a list of spike times, removing NaNs
     spike_times = [row[~np.isnan(row)] for row in spM]
 
-    # Visualize spike train data
-    plt.figure(figsize=(12, 8))
-    for i in range(min(50, len(spike_times))):  # Plot first 50 neurons or all if less than 50
-        plt.plot(spike_times[i], [i] * len(spike_times[i]), '|', markersize=2)
-    plt.title('Spike Train Visualization')
-    plt.xlabel('Time')
-    plt.ylabel('Neuron')
-    plt.ylim(-1, 50)
-    plt.savefig('spike_train_visualization.png')
-    plt.close()
-
-    # Print some statistics
+    # Print some statistics to check if the data is correct
     print("Number of neurons:", len(spike_times))
     print("Number of spikes per neuron:")
     print([len(spikes) for spikes in spike_times])
 
-    # Print initial data summary
-    print("Initial data summary:")
-    print("  Number of neurons:", len(spike_times))
-    print("  Number of spikes per neuron:")
-    print([len(spikes) for spikes in spike_times])
-
     try:
         # Define parameters
-        MaxLags = [0.015, 0.025, 0.04, 0.06, 0.085, 0.15, 0.25, 0.4, 0.6, 0.85, 1.5]
+        MaxLags = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10] # 10 is the maximum lag for each bin size
         BinSizes = [0.015, 0.025, 0.04, 0.06, 0.085, 0.15, 0.25, 0.4, 0.6, 0.85, 1.5]
 
         # Call CADopti function
