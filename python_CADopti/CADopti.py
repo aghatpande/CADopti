@@ -68,7 +68,6 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     © 2020 Russo
     for information please contact eleonora.russo@zi-mannheim.de
     """
-
     if ref_lag is None:
         ref_lag = 2
     if alph is None:
@@ -88,16 +87,24 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     # Remove NaNs and get valid spike times for each neuron
     spike_times = [neuron[~np.isnan(neuron)] for neuron in spike_times]
     
+    # After removing NaNs
+    max_spikes = max(len(spikes) for spikes in spike_times)
+    padded_spike_times = [np.pad(spikes, (0, max_spikes - len(spikes)), 
+                             mode='constant', constant_values=np.nan) 
+                      for spikes in spike_times]
+
+    # Check input data after processing for empty arrays after removing NaNs
+    if not padded_spike_times or any(len(spikes) == 0 for spikes in padded_spike_times):
+        raise ValueError("Invalid input: spike_times is empty or contains empty arrays after processing")
+    
     # Calculate the minimum interval between spikes
-    int_val = np.min([np.min(np.diff(times)) for times in spike_times if len(times) > 1])
+    int_val = np.min([np.min(np.diff(times)) for times in padded_spike_times if len(times) > 1])
     
     # Calculate overall min and max times
-    min_val = np.min([np.min(times) for times in spike_times if len(times) > 0])
-    max_val = np.max([np.max(times) for times in spike_times if len(times) > 0])
+    min_val = np.min([np.min(times) for times in padded_spike_times if len(times) > 0])
+    max_val = np.max([np.max(times) for times in padded_spike_times if len(times) > 0])
 
-    # checking spike_times makes sense before proceeding to detect assemblies
-    if not spike_times:
-        raise ValueError("All spike trains are empty")
+    # Check if the minimum interval is finite
     if not np.isfinite(int_val):
         raise ValueError("Couldn't compute a valid inter-spike interval")
     
@@ -106,6 +113,9 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
     
     if int_val == 0:
         raise ValueError("int_val is zero")
+    
+    print(f"Minimum inter-spike interval: {int_val}")
+    print(f"Min time: {min_val}, Max time: {max_val}")
     
     # matrix binning at all bins
     for gg in range(len(BinSizes)):
@@ -116,7 +126,7 @@ def CADopti(spike_times, MaxLags, BinSizes, ref_lag=None, alph=None, No_th=None,
         number_tests += nneu * (nneu - 1) * (2 * MaxLags[gg] + 1) // 2
     
         for n in range(nneu):
-            binM[gg][n, :], _ = np.histogram(spike_times[n], tb)
+            binM[gg][n, :], _ = np.histogram(padded_spike_times[n][~np.isnan(padded_spike_times[n])], tb)
         
         assembly = {'bin': [{'n': [], 'bin_edges': tb} for _ in range(len(BinSizes))]}
         
